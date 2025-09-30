@@ -1,0 +1,51 @@
+<!doctype html><html lang="fa" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>آپلود عکس بسته‌ها</title>
+<style>
+body{font-family:Tahoma,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;background:#f9fafb}
+.card{border:1px solid #e5e7eb;border-radius:16px;padding:16px;background:#fff;margin-bottom:16px}
+h2{margin:0 0 14px}
+label{display:block;margin:10px 0 6px}
+input,select,button{font-size:15px;padding:8px;border:1px solid #d1d5db;border-radius:10px}
+button{cursor:pointer}
+.muted{color:#666;font-size:13px}
+</style>
+</head><body>
+  <h2>آپلود عکس بسته‌ها (اپراتور)</h2>
+
+  <div class="card">
+    <h3 style="margin:0 0 10px">آپلود تکی</h3>
+    <form action="/upload-one" method="post" enctype="multipart/form-data">
+      <label>عکس بسته</label>
+      <input type="file" name="image" accept="image/*" required>
+      <label>کد (اختیاری؛ اگر ندهید از نام فایل/OCR حدس می‌زنیم)</label>
+      <input name="hinted_code" placeholder="مثلاً JAGSHNPL46C00N859">
+      <label>وضعیت</label>
+      <select name="status">
+        <option value="ARRIVED_DXB">رسیده به انبار دبی</option>
+        <option value="IN_TRANSIT_IR">در مسیر ارسال به ایران</option>
+        <option value="ARRIVED_TEH">رسیده به انبار تهران</option>
+        <option value="NOT_ARRIVED_DXB">هنوز نرسیده</option>
+      </select>
+      <div style="margin-top:10px"><button type="submit">آپلود</button></div>
+      <p class="muted">نتیجه به صورت JSON نمایش داده می‌شود.</p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 10px">آپلود چندتایی</h3>
+    <form action="/upload-many" method="post" enctype="multipart/form-data">
+      <label>عکس‌ها (می‌توانید چند فایل انتخاب کنید)</label>
+      <input type="file" name="images" accept="image/*" multiple required>
+      <label>وضعیت پیش‌فرض همه</label>
+      <select name="default_status">
+        <option value="ARRIVED_DXB">رسیده به انبار دبی</option>
+        <option value="IN_TRANSIT_IR">در مسیر ارسال به ایران</option>
+        <option value="ARRIVED_TEH">رسیده به انبار تهران</option>
+        <option value="NOT_ARRIVED_DXB">هنوز نرسیده</option>
+      </select>
+      <p class="muted">اگر کد در نام فایل باشد (مثل <b>CODE__anything.jpg</b>) اتومات استخراج می‌شود.</p>
+      <div style="margin-top:10px"><button type="submit">آپلود گروهی</button></div>
+    </form>
+  </div>
+</body></html>
