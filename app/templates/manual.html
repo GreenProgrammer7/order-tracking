@@ -1,0 +1,26 @@
+<!doctype html><html lang="fa"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>اتصال دستی عکس به سفارش</title>
+<style>
+body{font-family:Tahoma,sans-serif;max-width:520px;margin:24px auto;padding:0 16px}
+.card{border:1px solid #ddd;border-radius:12px;padding:16px}
+input,button,select{font-size:16px}
+</style>
+</head><body>
+<h3>اتصال دستی</h3>
+<div class="card">
+  <form action="/manual-attach" method="post" enctype="multipart/form-data">
+    <div>کد سفارش: <input name="code" required></div>
+    <div style="margin-top:8px">عکس بسته: <input type="file" name="image" accept="image/*" required></div>
+    <div style="margin-top:8px">
+      وضعیت:
+      <select name="status">
+        <option value="ARRIVED">رسیده</option>
+        <option value="SHIPPED">ارسال شد</option>
+        <option value="PENDING">نرسیده</option>
+      </select>
+    </div>
+    <div style="margin-top:12px"><button type="submit">ثبت</button></div>
+  </form>
+</div>
+</body></html>

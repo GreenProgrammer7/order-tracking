@@ -60,3 +60,48 @@ def track_page(code: str, request: Request, session: Session = Depends(get_sessi
     code = code.strip().upper()
     o = session.exec(select(Order).where(Order.code == code)).first()
     return templates.TemplateResponse("track.html", {"request": request, "order": o, "code": code})
+
+# بالای فایل کنار importهای دیگر اضافه کن:
+from fastapi import UploadFile, File
+from pathlib import Path
+import uuid, shutil
+
+# ... انتهای فایل:
+
+# نمایش فرم آپلود دستی
+@app.get("/manual", response_class=HTMLResponse)
+def manual_form(request: Request):
+    return templates.TemplateResponse("manual.html", {"request": request})
+
+# دریافت فایل و اتصال به سفارش
+@app.post("/manual-attach")
+def manual_attach(
+    code: str = Form(...),
+    status: str = Form("ARRIVED"),
+    image: UploadFile = File(...),
+    session: Session = Depends(get_session)
+):
+    code = code.strip().upper()
+
+    # ذخیره فایل در /static/uploads
+    ext = Path(image.filename).suffix.lower() or ".jpg"
+    fname = f"{uuid.uuid4().hex}{ext}"
+    dest = Path("app/static/uploads") / fname
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as f:
+        shutil.copyfileobj(image.file, f)
+    rel_path = f"/static/uploads/{fname}"
+
+    # یافتن/ساخت سفارش
+    o = session.exec(select(Order).where(Order.code == code)).first()
+    if not o:
+        o = Order(code=code)
+        session.add(o); session.flush()
+
+    # به‌روزرسانی سفارش
+    o.image_path = rel_path
+    o.status = status
+    o.updated_at = datetime.utcnow()
+    session.add(o); session.commit()
+
+    return {"ok": True, "code": code, "status": o.status, "image": rel_path}
