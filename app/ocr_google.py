@@ -1,50 +1,59 @@
-import os
-import json
-import tempfile
-import re
-from google.cloud import vision
+# app/ocr_google.py
+import os, tempfile, re
+from typing import Optional
 
-# --- تنظیم کلید از Environment Variable ---
-cred_content = os.getenv("GOOGLE_CREDENTIALS_JSON")
-if not cred_content:
-    raise RuntimeError("GOOGLE_CREDENTIALS_JSON env var not set")
+_client = None  # lazy
+_GOOD_ENV = "GOOGLE_CREDENTIALS_JSON"
+_B64_ENV  = "GOOGLE_CREDENTIALS_JSON_B64"
 
-# ساخت فایل موقت برای گوگل کلود
-with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-    tmp.write(cred_content.encode("utf-8"))
-    tmp.flush()
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+def _ensure_client():
+    global _client
+    if _client is not None:
+        return
 
-# --- کلاینت Vision API ---
-client = vision.ImageAnnotatorClient()
+    cred_content = os.getenv(_GOOD_ENV)
+    if not cred_content:
+        b64 = os.getenv(_B64_ENV)
+        if b64:
+            import base64
+            cred_content = base64.b64decode(b64).decode("utf-8")
 
-# --- تابع OCR ---
-def detect_code_from_image(path: str) -> str | None:
-    """
-    OCR روی تصویر انجام می‌دهد و سعی می‌کند کد بسته (JTE, AJA, BG...) را پیدا کند.
-    """
-    with open(path, "rb") as f:
-        content = f.read()
-    image = vision.Image(content=content)
+    if not cred_content:
+        print("[ocr] credentials env var not set; OCR disabled")
+        _client = False
+        return
 
-    response = client.text_detection(image=image)
-    texts = response.text_annotations
-    if not texts:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+        tmp.write(cred_content.encode("utf-8"))
+        tmp.flush()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
+    from google.cloud import vision
+    _client = vision.ImageAnnotatorClient()
+
+def detect_code_from_image(path: str) -> Optional[str]:
+    _ensure_client()
+    if not _client:
         return None
 
-    full_text = texts[0].description.upper()
+    from google.cloud import vision
+    with open(path, "rb") as f:
+        img = vision.Image(content=f.read())
 
-    # regex برای پیدا کردن کدها
+    resp = _client.text_detection(image=img)
+    ann = resp.text_annotations or []
+    if not ann:
+        return None
+
+    text = ann[0].description.upper()
     patterns = [
-        r"(JTE[0-9A-Z]{6,})",      # بارکدهای J&T
-        r"(AJA[0-9A-Z]{6,})",      # بارکدهای AJA
-        r"(BG[-0-9A-Z]{6,})",      # اینویس‌های BG
-        r"\b\d{10,15}\b",          # عددهای طولانی (اینویس نامبر)
+        r"(JTE[0-9A-Z]{6,})",
+        r"(AJA[0-9A-Z]{6,})",
+        r"(BG[-0-9A-Z]{6,})",
+        r"\b\d{10,15}\b",
     ]
-
     for p in patterns:
-        m = re.search(p, full_text)
+        m = re.search(p, text)
         if m:
             return m.group(1)
-
     return None
