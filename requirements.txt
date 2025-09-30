@@ -7,3 +7,4 @@ google-cloud-vision
 google-auth
 pillow
 opencv-python-headless
+python-multipart
