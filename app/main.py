@@ -1,9 +1,13 @@
+# app/main.py
 from datetime import datetime, date
 from pathlib import Path
 from typing import List, Optional
 import uuid, shutil, re
 
-from fastapi import FastAPI, Depends, Form, HTTPException, Request, UploadFile, File
+from fastapi import (
+    FastAPI, Depends, Form, HTTPException, Request,
+    UploadFile, File
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -12,7 +16,11 @@ from sqlmodel import select, Session
 
 from .deps import init_db, get_session
 from .models import Order, OrderStatus, OrderAlias
+
+# OCR گوگل – پیاده‌سازی‌اش در app/ocr_google.py است
+# (در آن فایل اگر کرِدنتیال ست نباشد، چیزی کرش نمی‌کند و None برمی‌گرداند)
 from .ocr_google import detect_code_from_image
+
 
 app = FastAPI(title="Order Tracker")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -20,10 +28,11 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 # ---------- Helpers ----------
+
 def resolve_order_by_any_code(code: str, session: Session) -> Optional[Order]:
     """
-    ابتدا با کد مستقیم سفارش را پیدا می‌کند؛
-    اگر نبود، در aliasها می‌گردد و سفارش متناظر با order_code را برمی‌گرداند.
+    اول با خودِ کد سفارش را می‌یابد؛
+    اگر نبود، در نگاشت‌ها (alias_code) می‌گردد و Order مربوط به order_code را برمی‌گرداند.
     """
     code = code.strip().upper()
     o = session.exec(select(Order).where(Order.code == code)).first()
@@ -32,6 +41,23 @@ def resolve_order_by_any_code(code: str, session: Session) -> Optional[Order]:
     al = session.exec(select(OrderAlias).where(OrderAlias.alias_code == code)).first()
     if al:
         return session.exec(select(Order).where(Order.code == al.order_code)).first()
+    return None
+
+
+# الگوهای حدس کد از نام فایل
+CODE_REGEXES = [
+    re.compile(r"^([A-Za-z0-9\-]{6,})"),                   # شروع نام فایل یک کد
+    re.compile(r"^([A-Za-z0-9\-]+)__"),                    # CODE__anything.jpg
+    re.compile(r"\b(JTE[A-Za-z0-9]{6,}|AJA[A-Za-z0-9]{6,})\b", re.I),  # حامل‌ها
+    re.compile(r"\b\d{10,16}\b"),                          # اینویس/بارکد عددی بلند
+]
+
+def guess_code_from_filename(filename: str) -> Optional[str]:
+    name = Path(filename).stem
+    for rx in CODE_REGEXES:
+        m = rx.search(name)
+        if m:
+            return m.group(1).upper()
     return None
 
 
@@ -185,8 +211,10 @@ def bulk_update_status(payload: BulkUpdatePayload, session: Session = Depends(ge
     if payload.new_status not in valid:
         raise HTTPException(400, "Invalid status")
 
+    # نرمال‌سازی
     excludes = set([c.strip().upper() for c in (payload.exclude_codes or []) if c and c.strip()])
 
+    # بازه زمانی inclusive
     start_dt = datetime.combine(payload.start_date, datetime.min.time())
     end_dt   = datetime.combine(payload.end_date,   datetime.max.time())
 
@@ -209,128 +237,7 @@ def bulk_update_status(payload: BulkUpdatePayload, session: Session = Depends(ge
     return {"ok": True, "updated_count": updated, "new_status": payload.new_status, "affected_codes": affected_codes[:100]}
 
 
-# ---------- OCR helpers (filename guess) ----------
-CODE_REGEXES = [
-    re.compile(r"^([A-Za-z0-9\-]{6,})"),
-    re.compile(r"^([A-Za-z0-9\-]+)__"),
-    re.compile(r"\b(JTE[A-Za-z0-9]{6,}|AJA[A-Za-z0-9]{6,})\b", re.I),
-    re.compile(r"\b\d{10,15}\b"),
-]
-def guess_code_from_filename(filename: str) -> Optional[str]:
-    name = Path(filename).stem
-    for rx in CODE_REGEXES:
-        m = rx.search(name)
-        if m:
-            return m.group(1).upper()
-    return None
-
-
-# ---------- Operator pages & upload ----------
-@app.get("/upload", response_class=HTMLResponse)
-def upload_form(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request})
-
-
-@app.post("/upload-one")
-def upload_one(
-    image: UploadFile = File(...),
-    hinted_code: Optional[str] = Form(None),
-    status: Optional[str] = Form(None),
-    session: Session = Depends(get_session),
-):
-    # ذخیره فایل
-    ext = Path(image.filename).suffix.lower() or ".jpg"
-    fname = f"{uuid.uuid4().hex}{ext}"
-    dest = Path("app/static/uploads") / fname
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("wb") as f:
-        shutil.copyfileobj(image.file, f)
-    rel_path = f"/static/uploads/{fname}"
-
-    # تعیین کد
-    from_filename = guess_code_from_filename(image.filename)
-    code = (hinted_code.strip().upper() if hinted_code else None) or from_filename
-    if not code:
-        code = detect_code_from_image(str(dest)) or None
-
-    if not code:
-        return {"ok": False, "needs_review": True, "image": rel_path, "message": "کد پیدا نشد."}
-
-    # resolve با کد مشتری یا alias
-    o = resolve_order_by_any_code(code, session)
-    if not o:
-        return {
-            "ok": False,
-            "needs_review": True,
-            "detected_code": code,   # ← برای ساخت سریع alias
-            "image": rel_path,
-            "message": "نگاشت برای این کد تعریف نشده."
-        }
-
-    o.image_path = rel_path
-    if status in (OrderStatus.NOT_ARRIVED_DXB, OrderStatus.ARRIVED_DXB, OrderStatus.IN_TRANSIT_IR, OrderStatus.ARRIVED_TEH):
-        o.status = status
-    else:
-        o.status = OrderStatus.ARRIVED_DXB
-    o.updated_at = datetime.utcnow()
-    session.add(o); session.commit()
-
-    return {"ok": True, "code": o.code, "status": o.status, "image": rel_path}
-
-
-@app.post("/upload-many")
-def upload_many(
-    images: List[UploadFile] = File(...),
-    default_status: str = Form(OrderStatus.ARRIVED_DXB),
-    session: Session = Depends(get_session),
-):
-    results = []
-    for img in images:
-        try:
-            ext = Path(img.filename).suffix.lower() or ".jpg"
-            fname = f"{uuid.uuid4().hex}{ext}"
-            dest = Path("app/static/uploads") / fname
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with dest.open("wb") as f:
-                shutil.copyfileobj(img.file, f)
-            rel_path = f"/static/uploads/{fname}"
-
-            code = guess_code_from_filename(img.filename) or detect_code_from_image(str(dest))
-            if not code:
-                results.append({"file": img.filename, "ok": False, "needs_review": True, "image": rel_path, "reason": "CODE_NOT_FOUND"})
-                continue
-
-            o = resolve_order_by_any_code(code, session)
-            if not o:
-                results.append({
-                    "file": img.filename,
-                    "ok": False,
-                    "needs_review": True,
-                    "detected_code": code,  # ← کمک برای alias
-                    "image": rel_path,
-                    "reason": "ALIAS_NOT_MAPPED"
-                })
-                continue
-
-            o.image_path = rel_path
-            o.status = default_status if default_status in (OrderStatus.NOT_ARRIVED_DXB, OrderStatus.ARRIVED_DXB, OrderStatus.IN_TRANSIT_IR, OrderStatus.ARRIVED_TEH) else OrderStatus.ARRIVED_DXB
-            o.updated_at = datetime.utcnow()
-            session.add(o)
-            results.append({"file": img.filename, "ok": True, "code": o.code, "status": o.status, "image": rel_path})
-        except Exception as e:
-            results.append({"file": getattr(img, 'filename', '?'), "ok": False, "error": str(e)})
-    session.commit()
-    return {
-        "summary": {
-            "total": len(images),
-            "succeeded": sum(1 for r in results if r.get("ok")),
-            "needs_review": sum(1 for r in results if r.get("needs_review")),
-        },
-        "results": results
-    }
-
-
-# ---------- Ingest by coworker (with OCR) ----------
+# ---------- Ingest by coworker (with optional OCR) ----------
 @app.post("/ingest-image")
 def ingest_image(
     image: UploadFile = File(...),
@@ -347,24 +254,20 @@ def ingest_image(
         shutil.copyfileobj(image.file, f)
     rel_path = f"/static/uploads/{fname}"
 
-    # تعیین کد: hinted → OCR
-    code = hinted_code.strip().upper() if hinted_code else None
+    # تعیین کد: hinted -> filename -> OCR
+    code = hinted_code.strip().upper() if hinted_code else guess_code_from_filename(image.filename)
     if not code:
-        code = detect_code_from_image(str(dest)) or None
+        code = detect_code_from_image(str(dest))
 
     if not code:
+        # نگه‌داشتن برای بازبینی دستی
         return {"ok": False, "needs_review": True, "image": rel_path, "message": "کد پیدا نشد یا تعریف نشده است."}
 
     # پیدا کردن سفارش: مستقیم یا از طریق نگاشت
     o = resolve_order_by_any_code(code, session)
     if not o:
-        return {
-            "ok": False,
-            "needs_review": True,
-            "detected_code": code,  # ← برای alias
-            "image": rel_path,
-            "message": "نگاشت برای این کد تعریف نشده. ابتدا /admin/aliases را ثبت کنید."
-        }
+        # اگر کدِ داده‌شده alias است ولی نگاشت نداری، بهتره اول /admin/aliases را ثبت کنی
+        return {"ok": False, "needs_review": True, "image": rel_path, "detected_code": code, "message": "نگاشت برای این کد تعریف نشده. ابتدا /admin/aliases را ثبت کنید."}
 
     # به‌روزرسانی سفارش
     o.image_path = rel_path
@@ -376,3 +279,100 @@ def ingest_image(
     session.add(o); session.commit()
 
     return {"ok": True, "code": o.code, "status": o.status, "image": rel_path}
+
+
+# === صفحهٔ اپراتور: فرم آپلود ===
+@app.get("/upload", response_class=HTMLResponse)
+def upload_form(request: Request):
+    return templates.TemplateResponse("upload.html", {"request": request})
+
+
+# === آپلود تکی (با fallback به OCR) ===
+@app.post("/upload-one")
+def upload_one(
+    image: UploadFile = File(...),
+    hinted_code: str | None = Form(None),
+    status: str | None = Form(None),
+    session: Session = Depends(get_session),
+):
+    ext = Path(image.filename).suffix.lower() or ".jpg"
+    fname = f"{uuid.uuid4().hex}{ext}"
+    dest = Path("app/static/uploads") / fname
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as f:
+        shutil.copyfileobj(image.file, f)
+    rel_path = f"/static/uploads/{fname}"
+
+    # 1) از hinted یا نام فایل
+    code = hinted_code.strip().upper() if hinted_code else guess_code_from_filename(image.filename)
+    # 2) اگر نشد، OCR
+    if not code:
+        code = detect_code_from_image(str(dest))
+
+    if not code:
+        return {"ok": False, "needs_review": True, "image": rel_path, "message": "کدی یافت نشد."}
+
+    o = resolve_order_by_any_code(code, session)
+    if not o:
+        return {"ok": False, "needs_review": True, "image": rel_path, "detected_code": code, "message": "نگاشت/سفارش برای این کد تعریف نشده."}
+
+    o.image_path = rel_path
+    if status in ("NOT_ARRIVED_DXB","ARRIVED_DXB","IN_TRANSIT_IR","ARRIVED_TEH"):
+        o.status = status
+    else:
+        o.status = "ARRIVED_DXB"
+    o.updated_at = datetime.utcnow()
+    session.add(o); session.commit()
+
+    return {"ok": True, "code": o.code, "status": o.status, "image": rel_path}
+
+
+# === آپلود چندتایی (با fallback به OCR) ===
+@app.post("/upload-many")
+def upload_many(
+    images: List[UploadFile] = File(...),
+    default_status: str = Form("ARRIVED_DXB"),
+    session: Session = Depends(get_session),
+):
+    results = []
+    for img in images:
+        try:
+            ext = Path(img.filename).suffix.lower() or ".jpg"
+            fname = f"{uuid.uuid4().hex}{ext}"
+            dest = Path("app/static/uploads") / fname
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("wb") as f:
+                shutil.copyfileobj(img.file, f)
+            rel_path = f"/static/uploads/{fname}"
+
+            # 1) نام فایل
+            code = guess_code_from_filename(img.filename)
+            # 2) OCR اگر لازم شد
+            if not code:
+                code = detect_code_from_image(str(dest))
+
+            if not code:
+                results.append({"file": img.filename, "ok": False, "needs_review": True, "image": rel_path, "reason": "CODE_NOT_FOUND"})
+                continue
+
+            o = resolve_order_by_any_code(code, session)
+            if not o:
+                results.append({"file": img.filename, "ok": False, "needs_review": True, "image": rel_path, "detected_code": code, "reason": "ALIAS_NOT_MAPPED"})
+                continue
+
+            o.image_path = rel_path
+            o.status = default_status if default_status in ("NOT_ARRIVED_DXB","ARRIVED_DXB","IN_TRANSIT_IR","ARRIVED_TEH") else "ARRIVED_DXB"
+            o.updated_at = datetime.utcnow()
+            session.add(o)
+            results.append({"file": img.filename, "ok": True, "code": o.code, "status": o.status, "image": rel_path})
+        except Exception as e:
+            results.append({"file": getattr(img, 'filename', '?'), "ok": False, "error": str(e)})
+    session.commit()
+    return {
+        "summary": {
+            "total": len(images),
+            "succeeded": sum(1 for r in results if r.get("ok")),
+            "needs_review": sum(1 for r in results if r.get("needs_review")),
+        },
+        "results": results
+    }
