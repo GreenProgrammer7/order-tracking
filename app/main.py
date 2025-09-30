@@ -12,7 +12,7 @@ from sqlmodel import select, Session
 
 from .deps import init_db, get_session
 from .models import Order, OrderStatus, OrderAlias
-from .ocr import detect_code_from_image  # ← OCR (Tesseract)
+from .ocr_google import detect_code_from_image
 
 app = FastAPI(title="Order Tracker")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

@@ -6,3 +6,5 @@ python-multipart
 pillow
 pytesseract
 pydantic-settings
+google-cloud-vision
+google-auth
