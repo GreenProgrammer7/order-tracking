@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fa">
+<head>
+<meta charset="utf-8">
+<title>پیگیری سفارش {{ code }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Tahoma,sans-serif;max-width:680px;margin:24px auto;padding:0 16px}
+.card{border:1px solid #ddd;border-radius:12px;padding:16px}
+img{max-width:100%;border-radius:12px;border:1px solid #eee}
+.status{display:inline-block;padding:6px 10px;border-radius:20px;background:#f2f2f2}
+.muted{color:#666}
+</style>
+</head>
+<body>
+<h2>پیگیری سفارش</h2>
+{% if order %}
+  <div class="card">
+    <div>کد: <b>{{ order.code }}</b></div>
+    <div class="status">
+      {% if order.status == "PENDING" %} هنوز به دست ما نرسیده
+      {% elif order.status == "ARRIVED" %} رسیده به انبار
+      {% elif order.status == "SHIPPED" %} ارسال شد
+      {% else %} وضعیت نامشخص {% endif %}
+    </div>
+    <div style="margin-top:12px">
+      {% if order.image_path %}
+        <img src="{{ order.image_path }}" alt="عکس بسته">
+      {% else %}
+        <p class="muted">هنوز عکس بسته موجود نیست.</p>
+      {% endif %}
+    </div>
+  </div>
+{% else %}
+  <p>سفارشی با این کد پیدا نشد.</p>
+{% endif %}
+</body>
+</html>
