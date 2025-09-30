@@ -1,51 +1,53 @@
-from typing import Optional, List, Tuple
+from pathlib import Path
 import re
-import easyocr
+from typing import Optional
 
-# الگوهای متنیِ نزدیک به چیزی که گفتی
-CONTEXT_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("INVOICE", re.compile(r"Invoice\s*Number[:\s]+(\d{10,15})", re.I)),
+import pytesseract
+from PIL import Image, ImageOps, ImageFilter
+
+# الگوهای کد
+PATTERNS = [
+    re.compile(r"\b(JTE[A-Za-z0-9]{6,})\b", re.I),  # J&T
+    re.compile(r"\b(AJA[A-Za-z0-9]{6,})\b", re.I),  # AJEX
+    re.compile(r"\b\d{10,15}\b"),                   # اینویس‌های عددی بلند
 ]
 
-CARRIER_PATTERNS: List[re.Pattern] = [
-    re.compile(r"\bJTE[0-9]{8,}\b", re.I),   # J&T Express
-    re.compile(r"\bAJA[0-9]{6,}\b", re.I),   # AJEX
-]
+def _preprocess(img: Image.Image) -> Image.Image:
+    """
+    پیش‌پردازش ساده: تبدیل به خاکستری، افزایش کنتراست، شارپ، باینری.
+    """
+    g = ImageOps.grayscale(img)
+    # upscale برای بهبود OCR روی فونت ریز
+    if min(g.size) < 1000:
+        scale = 2
+        g = g.resize((g.width * scale, g.height * scale))
+    # افزایش کنتراست/شارپ
+    g = ImageOps.autocontrast(g)
+    g = g.filter(ImageFilter.SHARPEN)
+    # باینری ساده
+    g = g.point(lambda x: 255 if x > 180 else 0, mode='1')
+    return g
 
-FALLBACK_NUMBER = re.compile(r"\b\d{12,13}\b")
-
-# Reader را یک بار بسازیم تا سریع‌تر شود
-_reader: easyocr.Reader | None = None
-def _get_reader():
-    global _reader
-    if _reader is None:
-        # زبان انگلیسی کفایت می‌کند (labels انگلیسی‌اند)
-        _reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-    return _reader
-
-def detect_code_from_image(path: str) -> Optional[str]:
-    reader = _get_reader()
-    # result: لیستی از (bbox, text, confidence)
-    results = reader.readtext(path, detail=1, paragraph=True)
-    # فقط متن‌ها را یکجا جمع کنیم
-    texts = [t[1] for t in results if len(t) >= 2 and isinstance(t[1], str)]
-    all_text = "\n".join(texts)
-
-    # 1) نزدیک به Invoice Number
-    for name, pat in CONTEXT_PATTERNS:
-        m = pat.search(all_text)
+def _extract_code_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+    for rx in PATTERNS:
+        m = rx.search(text)
         if m:
-            return m.group(1).strip()
-
-    # 2) پیشوندهای حامل
-    for pat in CARRIER_PATTERNS:
-        m = pat.search(all_text)
-        if m:
-            return m.group(0).upper().strip()
-
-    # 3) fallback: عدد بلند عمومی
-    m = FALLBACK_NUMBER.search(all_text)
-    if m:
-        return m.group(0)
-
+            return m.group(1).upper()
     return None
+
+def detect_code_from_image(image_path: str) -> Optional[str]:
+    """
+    OCR محلی با تسرکت. خروجی: اولین کد معتبر یا None.
+    """
+    try:
+        img = Image.open(image_path).convert("RGB")
+        proc = _preprocess(img)
+        # انگلیسی کافیه؛ اگر برچسب‌ها فارسی هم دارند: eng+fas
+        text = pytesseract.image_to_string(proc, lang="eng")
+        # اگر لازم شد: text += "\n" + pytesseract.image_to_string(proc, lang="fas")
+        return _extract_code_from_text(text)
+    except Exception as e:
+        print("OCR error:", e)
+        return None

@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from .ocr import detect_code_from_image
 from pathlib import Path
 from typing import List, Optional
 import uuid, shutil
@@ -214,7 +215,6 @@ def ingest_image(
     status: Optional[str] = Form(None),
     session: Session = Depends(get_session)
 ):
-    # ذخیره فایل
     ext = Path(image.filename).suffix.lower() or ".jpg"
     fname = f"{uuid.uuid4().hex}{ext}"
     dest = Path("app/static/uploads") / fname
@@ -222,23 +222,23 @@ def ingest_image(
     with dest.open("wb") as f:
         shutil.copyfileobj(image.file, f)
     rel_path = f"/static/uploads/{fname}"
-    # تعیین کد: یا hinted_code یا OCR (در صورت فعال بودن)
+
     code = hinted_code.strip().upper() if hinted_code else None
-    # اگر OCR فعال داری:
-    # if not code:
-    #     code = detect_code_from_image(str(dest)) or None
+    if not code:
+        code = detect_code_from_image(str(dest)) or None
+
     if not code:
         return {"ok": False, "needs_review": True, "image": rel_path, "message": "کد پیدا نشد یا تعریف نشده است."}
-    # پیدا کردن سفارش: مستقیم یا از طریق نگاشت
+
     o = resolve_order_by_any_code(code, session)
     if not o:
         return {"ok": False, "needs_review": True, "image": rel_path, "message": "نگاشت برای این کد تعریف نشده. ابتدا /admin/aliases را ثبت کنید."}
-    # به‌روزرسانی سفارش
+
     o.image_path = rel_path
     if status in (OrderStatus.NOT_ARRIVED_DXB, OrderStatus.ARRIVED_DXB, OrderStatus.IN_TRANSIT_IR, OrderStatus.ARRIVED_TEH):
         o.status = status
     else:
-        o.status = OrderStatus.ARRIVED_DXB  # پیش‌فرض وقتی عکس رسید: رسیده دبی
+        o.status = OrderStatus.ARRIVED_DXB
     o.updated_at = datetime.utcnow()
     session.add(o); session.commit()
     return {"ok": True, "code": o.code, "status": o.status, "image": rel_path}
@@ -262,12 +262,19 @@ def upload_one(
     with dest.open("wb") as f:
         shutil.copyfileobj(image.file, f)
     rel_path = f"/static/uploads/{fname}"
-    code = hinted_code.strip().upper() if hinted_code else guess_code_from_filename(image.filename)
+
+    from_filename = guess_code_from_filename(image.filename)
+    code = (hinted_code.strip().upper() if hinted_code else None) or from_filename
+    if not code:
+        code = detect_code_from_image(str(dest)) or None
+
     if not code:
         return {"ok": False, "needs_review": True, "image": rel_path, "message": "کد پیدا نشد."}
+
     o = resolve_order_by_any_code(code, session)
     if not o:
         return {"ok": False, "needs_review": True, "image": rel_path, "message": "نگاشت برای این کد تعریف نشده."}
+
     o.image_path = rel_path
     if status in (OrderStatus.NOT_ARRIVED_DXB, OrderStatus.ARRIVED_DXB, OrderStatus.IN_TRANSIT_IR, OrderStatus.ARRIVED_TEH):
         o.status = status
@@ -276,6 +283,7 @@ def upload_one(
     o.updated_at = datetime.utcnow()
     session.add(o); session.commit()
     return {"ok": True, "code": o.code, "status": o.status, "image": rel_path}
+
 
 @app.post("/upload-many")
 def upload_many(
@@ -293,14 +301,17 @@ def upload_many(
             with dest.open("wb") as f:
                 shutil.copyfileobj(img.file, f)
             rel_path = f"/static/uploads/{fname}"
-            code = guess_code_from_filename(img.filename)
+
+            code = guess_code_from_filename(img.filename) or detect_code_from_image(str(dest))
             if not code:
                 results.append({"file": img.filename, "ok": False, "needs_review": True, "image": rel_path, "reason": "CODE_NOT_FOUND"})
                 continue
+
             o = resolve_order_by_any_code(code, session)
             if not o:
                 results.append({"file": img.filename, "ok": False, "needs_review": True, "image": rel_path, "reason": "ALIAS_NOT_MAPPED"})
                 continue
+
             o.image_path = rel_path
             o.status = default_status if default_status in (OrderStatus.NOT_ARRIVED_DXB, OrderStatus.ARRIVED_DXB, OrderStatus.IN_TRANSIT_IR, OrderStatus.ARRIVED_TEH) else OrderStatus.ARRIVED_DXB
             o.updated_at = datetime.utcnow()
@@ -317,3 +328,4 @@ def upload_many(
         },
         "results": results
     }
+
