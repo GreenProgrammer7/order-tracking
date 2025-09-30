@@ -1,38 +1,64 @@
 <!doctype html>
-<html lang="fa">
+<html lang="fa" dir="rtl">
 <head>
-<meta charset="utf-8">
-<title>پیگیری سفارش {{ code }}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:Tahoma,sans-serif;max-width:680px;margin:24px auto;padding:0 16px}
-.card{border:1px solid #ddd;border-radius:12px;padding:16px}
-img{max-width:100%;border-radius:12px;border:1px solid #eee}
-.status{display:inline-block;padding:6px 10px;border-radius:20px;background:#f2f2f2}
-.muted{color:#666}
-</style>
+  <meta charset="utf-8">
+  <title>پیگیری سفارش {{ code }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{--card:#fff;--muted:#666;--border:#e5e7eb;--chip:#f3f4f6}
+    body{font-family:Tahoma, sans-serif;background:#fafafa;margin:0;padding:24px}
+    .wrap{max-width:720px;margin:0 auto}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px}
+    h2{margin:0 0 14px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .chip{background:var(--chip);padding:6px 10px;border-radius:999px;display:inline-block}
+    .muted{color:var(--muted)}
+    img{max-width:100%;border-radius:12px;border:1px solid var(--border);margin-top:12px}
+    .empty{padding:10px 0}
+    .small{font-size:12px;color:#888;margin-top:8px}
+  </style>
 </head>
 <body>
-<h2>پیگیری سفارش</h2>
-{% if order %}
-  <div class="card">
-    <div>کد: <b>{{ order.code }}</b></div>
-    <div class="status">
-      {% if order.status == "PENDING" %} هنوز به دست ما نرسیده
-      {% elif order.status == "ARRIVED" %} رسیده به انبار
-      {% elif order.status == "SHIPPED" %} ارسال شد
-      {% else %} وضعیت نامشخص {% endif %}
-    </div>
-    <div style="margin-top:12px">
-      {% if order.image_path %}
-        <img src="{{ order.image_path }}" alt="عکس بسته">
-      {% else %}
-        <p class="muted">هنوز عکس بسته موجود نیست.</p>
-      {% endif %}
-    </div>
+  <div class="wrap">
+    <h2>پیگیری سفارش</h2>
+
+    {% if order %}
+      <div class="card">
+        <div class="row">
+          <div>کد وارد‌شده:</div>
+          <div class="chip"><b>{{ code }}</b></div>
+        </div>
+
+        <div style="margin-top:10px" class="chip">
+          {% if order.status == "NOT_ARRIVED_DXB" %}
+            سفارش شما هنوز به انبار دبی ما نرسیده.
+          {% elif order.status == "ARRIVED_DXB" %}
+            سفارشتان به انبار دبی رسیده.
+          {% elif order.status == "IN_TRANSIT_IR" %}
+            سفارش شما در حال ارسال به ایران است.
+          {% elif order.status == "ARRIVED_TEH" %}
+            سفارش شما به انبار تهران رسیده و به‌زودی برای شما ارسال خواهد شد.
+          {% else %}
+            وضعیت نامشخص
+          {% endif %}
+        </div>
+
+        {% if order.image_path %}
+          <img src="{{ order.image_path }}" alt="عکس بسته">
+          <div class="small">آخرین بروزرسانی: {{ order.updated_at }}</div>
+        {% else %}
+          <div class="empty muted">هنوز عکس بسته موجود نیست.</div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="card">
+        <div class="row">
+          <div>کد وارد‌شده:</div>
+          <div class="chip"><b>{{ code }}</b></div>
+        </div>
+        <p class="muted" style="margin-top:12px">سفارشی با این کد پیدا نشد.</p>
+      </div>
+    {% endif %}
   </div>
-{% else %}
-  <p>سفارشی با این کد پیدا نشد.</p>
-{% endif %}
 </body>
 </html>

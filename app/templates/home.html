@@ -1,23 +1,28 @@
-<!doctype html><html lang="fa"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>پیگیری سفارش</title>
-<style>
-  body{font-family:Tahoma,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fafafa}
-  .card{width:100%;max-width:420px;border:1px solid #e5e7eb;border-radius:16px;background:#fff;padding:20px;box-shadow:0 6px 24px rgba(0,0,0,.04)}
-  h2{margin:0 0 12px}
-  input,button{font-size:16px;padding:10px;border-radius:10px;border:1px solid #d1d5db}
-  .row{display:flex;gap:8px}
-  .muted{color:#6b7280;font-size:13px;margin-top:10px}
-</style>
-</head><body>
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>پیگیری سفارش</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Tahoma,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f9fafb;margin:0}
+    .card{width:100%;max-width:400px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,0.05)}
+    h2{margin:0 0 16px;text-align:center}
+    form{display:flex;gap:8px}
+    input{flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:15px}
+    button{padding:10px 16px;border:none;background:#2563eb;color:#fff;border-radius:10px;cursor:pointer;font-size:15px}
+    button:hover{background:#1d4ed8}
+    .muted{margin-top:12px;color:#666;font-size:13px;text-align:center}
+  </style>
+</head>
+<body>
   <div class="card">
     <h2>پیگیری سفارش</h2>
     <form method="get" action="/u">
-      <div class="row">
-        <input name="code" placeholder="کد سفارش را وارد کنید" required style="flex:1">
-        <button type="submit">جستجو</button>
-      </div>
+      <input name="code" placeholder="کد سفارش را وارد کنید" required>
+      <button type="submit">جستجو</button>
     </form>
     <div class="muted">مثال: 6092725291274 یا JTE300349342180</div>
   </div>
-</body></html>
+</body>
+</html>
