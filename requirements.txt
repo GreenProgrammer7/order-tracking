@@ -1,10 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlmodel
 jinja2
-python-multipart
-pillow
-pytesseract
 pydantic-settings
 google-cloud-vision
 google-auth
+pillow
+opencv-python-headless
