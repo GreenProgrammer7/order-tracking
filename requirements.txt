@@ -5,3 +5,6 @@ pydantic-settings
 Jinja2
 python-multipart
 Pillow
+easyocr
+opencv-python-headless
+numpy
